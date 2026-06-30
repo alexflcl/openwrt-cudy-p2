@@ -62,6 +62,27 @@ make4.1+ perl python3.7+ rsync subversion unzip which
    cross-compile toolchain and then cross-compile the GNU/Linux kernel & all chosen
    applications for your target system.
 
+### Cudy P2 vendor modem driver log spam
+
+This fork includes a helper to silence the noisy `sprd_pcie` IRQ debug spam from
+Quectel's `quectel_SRPD_PCIE` feed package used by the Cudy P2 modem.
+
+Typical workflow:
+
+1. Run `./scripts/feeds update jell`
+2. Run `./scripts/feeds install -p jell sprd_pcie`
+3. Run `./scripts/cudy-p2-prepare-vendor-driver.sh`
+4. Build as usual
+
+The helper patches this vendor source file inside the feed checkout:
+
+- `feeds/jell/quectel_SRPD_PCIE/src/pcie/sprd_pcie_ep_device.c`
+
+It removes the two noisy `dev_dbg()` calls that emit:
+
+- `ep: irq handler. irq = 0x...`
+- `ep: irq handler. irq = ...`
+
 ### Related Repositories
 
 The main repository uses multiple sub-repositories to manage packages of
