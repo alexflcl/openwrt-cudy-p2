@@ -1,0 +1,18 @@
+#!/bin/sh
+
+board="$(. /lib/functions.sh; board_name 2>/dev/null || true)"
+[ "$board" = "cudy,p2-v1" ] || exit 0
+
+uci -q batch <<'EOF'
+set network.@device[0].name='br-lan'
+set network.@device[0].type='bridge'
+delete network.@device[0].ports
+add_list network.@device[0].ports='lan'
+set network.lan.device='br-lan'
+set network.wan.device='wan'
+set network.wan6.device='wan'
+EOF
+
+uci commit network
+
+exit 0
