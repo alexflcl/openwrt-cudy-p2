@@ -74,6 +74,8 @@ It provides:
 - 4G, 5G and automatic radio preference selection
 - Firewall attachment of `wwan` to the `wan` zone
 - Boot-time modem start through `/etc/init.d/p2modem`
+- First-boot network sanity fix for `cudy,p2-v1`, forcing `br-lan` to use the
+  real `lan` device and keeping `wan` separate to avoid losing access after flashing
 
 For convenience, `p2modem` is included by default in Filogic builds from this
 fork.
