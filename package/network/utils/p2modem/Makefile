@@ -32,6 +32,8 @@ define Package/p2modem/install
 	$(INSTALL_BIN) ./files/etc/init.d/p2modem $(1)/etc/init.d/p2modem
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/etc/config/p2modem $(1)/etc/config/p2modem
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/etc/uci-defaults/90-cudy-p2-network-sanity $(1)/etc/uci-defaults/90-cudy-p2-network-sanity
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/network
 	$(INSTALL_DATA) ./files/www/luci-static/resources/view/network/p2modem.js $(1)/www/luci-static/resources/view/network/p2modem.js
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
