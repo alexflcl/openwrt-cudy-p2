@@ -1,0 +1,19 @@
+--- a/src/pcie/sprd_pcie_ep_device.c
++++ b/src/pcie/sprd_pcie_ep_device.c
+@@ -994,7 +994,6 @@ static irqreturn_t sprd_pci_ep_dev_irqhandler(int irq, void *arg)
+ 			handler(irq, ep_dev_handler_data[ep_dev->ep][PCIE_MSI_IPA]);
+ 
+ 
+ 		value = BL_READL(g_irq_addr[ep_dev->ep]);
+-		dev_dbg(dev, "ep: irq handler. irq = 0x%x, base=%d\n", value, ep_dev->base_irq);
+ 		for (i = 0; i < 32; i++) {
+ 			if (value & BIT(i)) {
+ 				/* clear iqr bit*/
+@@ -1015,7 +1014,6 @@ static irqreturn_t sprd_pci_ep_dev_irqhandler(int irq, void *arg)
+ 		return IRQ_HANDLED;
+ 	}
+ 
+-	dev_dbg(dev, "ep: irq handler. irq = %d\n",  irq);
+ 	/* for ipa hw irq. */
+ 	ipa_irq = irq - (pdev->irq + ep_dev->ipa_base_irq);
+ 	if (ipa_irq >= 0 && ipa_irq < IPA_HW_IRQ_CNT) {
