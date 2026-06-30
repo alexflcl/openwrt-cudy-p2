@@ -1,0 +1,355 @@
+#!/bin/sh
+set -e
+. /lib/functions.sh
+
+CONFIG_NAME="main"
+LOCK_FILE="/var/run/p2modem.lock"
+
+load_cfg() {
+    config_load p2modem >/dev/null 2>&1 || true
+    config_get ENABLED "$CONFIG_NAME" enabled "1"
+    config_get APN "$CONFIG_NAME" apn "internet"
+    config_get PDP_TYPE "$CONFIG_NAME" pdp_type "IP"
+    config_get AT_PORT "$CONFIG_NAME" at_port "/dev/stty_nr31"
+    config_get DATA_IF "$CONFIG_NAME" data_if "pcie0"
+    config_get DUMMY_IF "$CONFIG_NAME" dummy_if "sipa_dummy0"
+    config_get WWAN_IFACE "$CONFIG_NAME" wwan_iface "wwan"
+    config_get METRIC "$CONFIG_NAME" metric "10"
+    config_get WAN_MODE "$CONFIG_NAME" wan_mode "sim-primary"
+    config_get RAT_PREF "$CONFIG_NAME" rat_pref "auto"
+}
+
+log() {
+    logger -t p2modem "$*"
+    printf '%s\n' "$*"
+}
+
+run_locked() {
+    exec 9>"$LOCK_FILE"
+    flock -x 9
+    "$@"
+}
+
+capture_at() {
+    local cmd="$1"
+    local wait_s="${2:-2}"
+    local tmp="/tmp/p2modem-at.$$"
+    rm -f "$tmp"
+    cat "$AT_PORT" > "$tmp" &
+    local cpid=$!
+    sleep 1
+    printf '%s\r' "$cmd" > "$AT_PORT"
+    sleep "$wait_s"
+    kill "$cpid" >/dev/null 2>&1 || true
+    wait "$cpid" 2>/dev/null || true
+    tr -d '\000' < "$tmp"
+    rm -f "$tmp"
+}
+
+at_ok() {
+    local out
+    out="$(capture_at "$1" "${2:-2}")"
+    printf '%s\n' "$out"
+    printf '%s\n' "$out" | grep -q 'OK'
+}
+
+ensure_links() {
+    ip link set "$DUMMY_IF" up 2>/dev/null || true
+    ip link set "$DATA_IF" up 2>/dev/null || true
+}
+
+find_lan_device_section() {
+    local lan_device
+    local section
+
+    lan_device="$(uci -q get network.lan.device 2>/dev/null || true)"
+    if [ -z "$lan_device" ]; then
+        echo "@device[0]"
+        return 0
+    fi
+
+    for section in $(uci -q show network | sed -n 's/^network\.\([^.=]*\)=device$/\1/p'); do
+        if [ "$(uci -q get "network.$section.name" 2>/dev/null || true)" = "$lan_device" ]; then
+            echo "$section"
+            return 0
+        fi
+    done
+
+    echo "@device[0]"
+}
+
+set_lan_ports() {
+    local section="$1"
+    shift
+
+    uci -q delete "network.$section.ports"
+    while [ "$#" -gt 0 ]; do
+        uci add_list "network.$section.ports=$1"
+        shift
+    done
+}
+
+ensure_wwan_network() {
+    uci set "network.${WWAN_IFACE}=interface"
+    uci set "network.${WWAN_IFACE}.proto=dhcp"
+    uci set "network.${WWAN_IFACE}.device=$DATA_IF"
+    uci set "network.${WWAN_IFACE}.auto=1"
+    uci set "network.${WWAN_IFACE}.defaultroute=1"
+    uci set "network.${WWAN_IFACE}.metric=$METRIC"
+}
+
+ensure_wwan_firewall() {
+    local zone=""
+    local networks
+
+    for zone in $(uci -q show firewall | sed -n 's/^firewall\.\([^.=]*\)=zone$/\1/p'); do
+        if [ "$(uci -q get "firewall.$zone.name" 2>/dev/null || true)" = "wan" ]; then
+            break
+        fi
+        zone=""
+    done
+
+    [ -n "$zone" ] || return 0
+
+    networks="$(uci -q get "firewall.$zone.network" 2>/dev/null || true)"
+    case " $networks " in
+        *" $WWAN_IFACE "*) ;;
+        *) uci add_list "firewall.$zone.network=$WWAN_IFACE" ;;
+    esac
+}
+
+recycle_iface() {
+    local ifn="$1"
+    ifdown "$ifn" 2>/dev/null || true
+    sleep 1
+    ifup "$ifn" 2>/dev/null || true
+}
+
+get_temp_c() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    awk '{ printf "%.1f", $1 / 1000 }' "$path"
+}
+
+show_temps() {
+    echo "[TEMPS]"
+    printf 'cpu=%s C\n' "$(get_temp_c /sys/class/thermal/thermal_zone0/temp)"
+    printf 'wifi_2g=%s C\n' "$(get_temp_c /sys/class/hwmon/hwmon1/temp1_input)"
+    printf 'wifi_5g=%s C\n' "$(get_temp_c /sys/class/hwmon/hwmon2/temp1_input)"
+}
+
+apply_rat_pref() {
+    case "$RAT_PREF" in
+        4g|lte)
+            at_ok 'AT+QCFG="nwscanmode",3,1' 3 >/tmp/p2modem.last 2>&1 || true
+            at_ok 'AT+QCFG="iotopmode",0' 2 >/tmp/p2modem.last 2>&1 || true
+            log "Preferencia radio aplicada: 4G"
+            ;;
+        5g|nr)
+            at_ok 'AT+QCFG="nwscanmode",3,1' 3 >/tmp/p2modem.last 2>&1 || true
+            at_ok 'AT+QCFG="nr5g_disable_mode",0' 3 >/tmp/p2modem.last 2>&1 || true
+            log "Preferencia radio aplicada: 5G"
+            ;;
+        auto|*)
+            at_ok 'AT+QCFG="nwscanmode",0,1' 3 >/tmp/p2modem.last 2>&1 || true
+            log "Preferencia radio aplicada: auto"
+            ;;
+    esac
+}
+
+connect_impl() {
+    load_cfg
+    [ "$ENABLED" = "1" ] || { log "P2 modem desactivado"; exit 1; }
+    [ -c "$AT_PORT" ] || { log "Puerto AT no encontrado: $AT_PORT"; exit 1; }
+    [ -d "/sys/class/net/$DATA_IF" ] || { log "Interfaz de datos no encontrada: $DATA_IF"; exit 1; }
+
+    ensure_wwan_network
+    uci commit network
+    ensure_wwan_firewall
+    uci commit firewall
+    /etc/init.d/firewall reload >/dev/null 2>&1 || true
+
+    local out
+    out="$(capture_at 'AT' 2)"
+    printf '%s\n' "$out" | grep -q 'OK' || { log "El modem no responde por $AT_PORT"; exit 1; }
+    out="$(capture_at 'AT+CPIN?' 2)"
+    printf '%s\n' "$out" | grep -q '+CPIN: READY' || { printf '%s\n' "$out"; log "La SIM no esta lista"; exit 1; }
+    at_ok "AT+CGDCONT=1,\"$PDP_TYPE\",\"$APN\"" 2 >/tmp/p2modem.last 2>&1 || true
+    at_ok "AT+QICSGP=1,1,\"$APN\",\"\",\"\",0" 3 >/tmp/p2modem.last 2>&1 || true
+    apply_rat_pref || true
+    at_ok 'AT+QNETDEVCTL=1,1,1' 3 >/tmp/p2modem.last 2>&1 || {
+        cat /tmp/p2modem.last 2>/dev/null || true
+        log "No se pudo activar la sesion de datos"
+        exit 1
+    }
+
+    ensure_links
+    recycle_iface "$WWAN_IFACE"
+    sleep 6
+    if ifstatus "$WWAN_IFACE" 2>/dev/null | grep -q '"up": true'; then
+        log "WWAN conectada por $DATA_IF (modo $WAN_MODE, rat $RAT_PREF)"
+        return 0
+    fi
+
+    log "La interfaz $WWAN_IFACE no ha levantado"
+    ifstatus "$WWAN_IFACE" 2>/dev/null || true
+    exit 1
+}
+
+disconnect_impl() {
+    load_cfg
+    ifdown "$WWAN_IFACE" 2>/dev/null || true
+    capture_at 'AT+QNETDEVCTL=1,0,1' 3 >/tmp/p2modem.last 2>&1 || true
+    ip addr flush dev "$DATA_IF" 2>/dev/null || true
+    ip link set "$DATA_IF" down 2>/dev/null || true
+    ip link set "$DUMMY_IF" down 2>/dev/null || true
+    log "WWAN desconectada"
+}
+
+apply_mode_impl() {
+    local mode="${1:-}"
+    local lan_section
+
+    [ -n "$mode" ] || { echo "Falta modo"; exit 1; }
+
+    load_cfg
+    lan_section="$(find_lan_device_section)"
+    ensure_wwan_network
+    ensure_wwan_firewall
+
+    case "$mode" in
+        sim-primary)
+            uci set p2modem.main.metric='10'
+            uci set p2modem.main.wan_mode='sim-primary'
+            set_lan_ports "$lan_section" 'lan'
+            uci set network.wan.metric='30'
+            uci set network.wan6.metric='30'
+            uci set network.wan.auto='1'
+            uci set network.wan6.auto='1'
+            uci set network.wwan.metric='10'
+            uci set network.wwan.auto='1'
+            uci set network.wwan.defaultroute='1'
+            ;;
+        wan-primary)
+            uci set p2modem.main.metric='20'
+            uci set p2modem.main.wan_mode='wan-primary'
+            set_lan_ports "$lan_section" 'lan'
+            uci set network.wan.metric='10'
+            uci set network.wan6.metric='10'
+            uci set network.wan.auto='1'
+            uci set network.wan6.auto='1'
+            uci set network.wwan.metric='20'
+            uci set network.wwan.auto='1'
+            uci set network.wwan.defaultroute='1'
+            ;;
+        wan-as-lan)
+            uci set p2modem.main.metric='10'
+            uci set p2modem.main.wan_mode='wan-as-lan'
+            set_lan_ports "$lan_section" 'lan' 'wan'
+            uci set network.wan.auto='0'
+            uci set network.wan6.auto='0'
+            uci set network.wwan.metric='10'
+            uci set network.wwan.auto='1'
+            uci set network.wwan.defaultroute='1'
+            ;;
+        4g|lte)
+            uci set p2modem.main.rat_pref='4g'
+            RAT_PREF='4g'
+            uci commit p2modem
+            apply_rat_pref || true
+            ;;
+        5g|nr)
+            uci set p2modem.main.rat_pref='5g'
+            RAT_PREF='5g'
+            uci commit p2modem
+            apply_rat_pref || true
+            ;;
+        auto)
+            uci set p2modem.main.rat_pref='auto'
+            RAT_PREF='auto'
+            uci commit p2modem
+            apply_rat_pref || true
+            ;;
+        *)
+            echo "Modo no soportado: $mode"
+            exit 1
+            ;;
+    esac
+
+    case "$mode" in
+        sim-primary|wan-primary|wan-as-lan)
+            uci commit p2modem
+            uci commit network
+            uci commit firewall
+            /etc/init.d/firewall reload >/dev/null 2>&1 || true
+            /etc/init.d/network reload >/dev/null 2>&1 || true
+            if [ "$mode" = "wan-as-lan" ]; then
+                ifdown wan 2>/dev/null || true
+                ifdown wan6 2>/dev/null || true
+                ip route del default dev wan 2>/dev/null || true
+            else
+                recycle_iface wan
+            fi
+            recycle_iface "$WWAN_IFACE"
+            sleep 6
+            ;;
+    esac
+
+    if ! ifstatus "$WWAN_IFACE" 2>/dev/null | grep -q '"up": true'; then
+        connect_impl || true
+    fi
+
+    log "Modo WAN aplicado: $mode"
+}
+
+status_impl() {
+    load_cfg
+    echo "enabled=$ENABLED"
+    echo "apn=$APN"
+    echo "pdp_type=$PDP_TYPE"
+    echo "at_port=$AT_PORT"
+    echo "data_if=$DATA_IF"
+    echo "dummy_if=$DUMMY_IF"
+    echo "wwan_iface=$WWAN_IFACE"
+    echo "metric_config=$METRIC"
+    echo "wan_mode=$WAN_MODE"
+    echo "rat_pref=$RAT_PREF"
+    echo
+    show_temps
+    echo
+    echo "[IFSTATUS_WAN]"
+    ifstatus wan 2>/dev/null || true
+    echo
+    echo "[IFSTATUS_WWAN]"
+    ifstatus "$WWAN_IFACE" 2>/dev/null || true
+    echo
+    echo "[BRIDGE_PORTS]"
+    uci get "network.$(find_lan_device_section).ports" 2>/dev/null || true
+    echo
+    echo "[ACTIVE_ROUTE]"
+    ip route get 1.1.1.1 2>/dev/null || true
+    echo
+    echo "[ROUTES]"
+    ip route
+}
+
+probe_impl() {
+    load_cfg
+    for p in /dev/stty_nr31 /dev/stty_nr* /dev/ttyUSB2 /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB3 /dev/ttyUSB4; do
+        [ -e "$p" ] || continue
+        AT_PORT="$p"
+        echo "=== $p ==="
+        capture_at 'AT' 2 || true
+        echo
+    done
+}
+
+case "${1:-status}" in
+    connect) run_locked connect_impl ;;
+    disconnect) run_locked disconnect_impl ;;
+    status) run_locked status_impl ;;
+    probe) run_locked probe_impl ;;
+    temps) run_locked show_temps ;;
+    apply-mode) run_locked apply_mode_impl "${2:-}" ;;
+    *) echo "Uso: $0 {connect|disconnect|status|probe|temps|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>}"; exit 1 ;;
+esac
