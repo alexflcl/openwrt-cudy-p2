@@ -1,0 +1,11 @@
+{
+  "admin/network/p2modem": {
+    "title": "P2 Modem",
+    "order": 85,
+    "acl": [ "luci-app-p2modem" ],
+    "action": {
+      "type": "view",
+      "path": "network/p2modem"
+    }
+  }
+}
