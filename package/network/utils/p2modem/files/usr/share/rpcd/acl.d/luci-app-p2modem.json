@@ -1,0 +1,18 @@
+{
+  "luci-app-p2modem": {
+    "description": "ACL for P2 Modem LuCI view",
+    "read": {
+      "uci": [ "p2modem", "network", "system" ],
+      "file": {
+        "/usr/bin/p2modemctl status": [ "exec" ]
+      }
+    },
+    "write": {
+      "uci": [ "p2modem", "network", "system" ],
+      "file": {
+        "/usr/bin/p2modemctl *": [ "exec" ],
+        "/bin/sh -c *": [ "exec" ]
+      }
+    }
+  }
+}
