@@ -62,6 +62,22 @@ make4.1+ perl python3.7+ rsync subversion unzip which
    cross-compile toolchain and then cross-compile the GNU/Linux kernel & all chosen
    applications for your target system.
 
+### Cudy P2 modem integration
+
+This fork now ships a `p2modem` package that installs the LuCI page and helper
+scripts used to manage the internal modem on the Cudy P2.
+
+It provides:
+
+- SIM connect and disconnect actions
+- WAN priority switching between SIM primary, WAN primary and WAN-as-LAN
+- 4G, 5G and automatic radio preference selection
+- Firewall attachment of `wwan` to the `wan` zone
+- Boot-time modem start through `/etc/init.d/p2modem`
+
+For convenience, `p2modem` is included by default in Filogic builds from this
+fork.
+
 ### Cudy P2 vendor modem driver log spam
 
 This fork includes a helper to silence the noisy `sprd_pcie` IRQ debug spam from
