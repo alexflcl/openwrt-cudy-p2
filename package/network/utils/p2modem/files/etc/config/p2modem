@@ -1,0 +1,12 @@
+
+config settings 'main'
+	option enabled '1'
+	option apn 'internet'
+	option pdp_type 'IP'
+	option at_port '/dev/stty_nr31'
+	option data_if 'pcie0'
+	option dummy_if 'sipa_dummy0'
+	option wwan_iface 'wwan'
+	option metric '10'
+	option wan_mode 'wan-as-lan'
+	option rat_pref '5g'
