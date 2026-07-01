@@ -53,6 +53,10 @@ at_ok() {
     printf '%s\n' "$out" | grep -q 'OK'
 }
 
+at_query() {
+    capture_at "$1" "${2:-3}" | sed '/^$/d'
+}
+
 ensure_links() {
     ip link set "$DUMMY_IF" up 2>/dev/null || true
     ip link set "$DATA_IF" up 2>/dev/null || true
@@ -136,6 +140,63 @@ show_temps() {
     printf 'cpu=%s C\n' "$(get_temp_c /sys/class/thermal/thermal_zone0/temp)"
     printf 'wifi_2g=%s C\n' "$(get_temp_c /sys/class/hwmon/hwmon1/temp1_input)"
     printf 'wifi_5g=%s C\n' "$(get_temp_c /sys/class/hwmon/hwmon2/temp1_input)"
+}
+
+show_board_info() {
+    echo "[BOARD]"
+    ubus call system board 2>/dev/null || true
+}
+
+show_modem_ports() {
+    echo "[MODEM_PORTS]"
+    ls -l /dev/stty_nr31 /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4 2>/dev/null || true
+}
+
+show_net_links() {
+    echo "[NET_LINKS]"
+    ip -br link 2>/dev/null || true
+}
+
+show_active_dns() {
+    echo "[DNS]"
+    sed -n '1,20p' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null || true
+}
+
+show_modem_runtime() {
+    local out
+
+    echo "[MODEM_SIM]"
+    out="$(at_query 'AT+CPIN?' 2)"
+    printf '%s\n' "$out" | grep -E '^\+CPIN:' || true
+    out="$(at_query 'AT+QCCID' 2)"
+    printf '%s\n' "$out" | grep -E '^\+QCCID:' || true
+    echo
+
+    echo "[MODEM_OPERATOR]"
+    out="$(at_query 'AT+QSPN' 2)"
+    printf '%s\n' "$out" | grep -E '^\+QSPN:' || true
+    out="$(at_query 'AT+COPS?' 2)"
+    printf '%s\n' "$out" | grep -E '^\+COPS:' || true
+    echo
+
+    echo "[MODEM_SIGNAL]"
+    out="$(at_query 'AT+CSQ' 2)"
+    printf '%s\n' "$out" | grep -E '^\+CSQ:' || true
+    echo
+
+    echo "[MODEM_NETWORK]"
+    out="$(at_query 'AT+QNWINFO' 3)"
+    printf '%s\n' "$out" | grep -E '^\+QNWINFO:' || true
+    echo
+
+    echo "[MODEM_SERVING_CELL]"
+    out="$(at_query 'AT+QENG="servingcell"' 3)"
+    printf '%s\n' "$out" | grep -E '^\+QENG:' || true
+    echo
+
+    echo "[MODEM_CAINFO]"
+    out="$(at_query 'AT+QCAINFO' 3)"
+    printf '%s\n' "$out" | grep -E '^\+QCAINFO:' || true
 }
 
 apply_rat_pref() {
@@ -315,7 +376,15 @@ status_impl() {
     echo "wan_mode=$WAN_MODE"
     echo "rat_pref=$RAT_PREF"
     echo
+    show_board_info
+    echo
     show_temps
+    echo
+    show_modem_ports
+    echo
+    show_modem_runtime
+    echo
+    show_net_links
     echo
     echo "[IFSTATUS_WAN]"
     ifstatus wan 2>/dev/null || true
@@ -328,6 +397,8 @@ status_impl() {
     echo
     echo "[ACTIVE_ROUTE]"
     ip route get 1.1.1.1 2>/dev/null || true
+    echo
+    show_active_dns
     echo
     echo "[ROUTES]"
     ip route
