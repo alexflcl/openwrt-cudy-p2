@@ -71,17 +71,17 @@ return view.extend({
 		o = s.option(form.Value, 'data_if', _('Interfaz de datos')); o.placeholder = 'pcie0';
 		o = s.option(form.Value, 'dummy_if', _('Interfaz dummy')); o.placeholder = 'sipa_dummy0';
 		o = s.option(form.Value, 'wwan_iface', _('Interfaz OpenWrt')); o.placeholder = 'wwan';
+		o = s.option(form.ListValue, 'wan_mode', _('Modo WAN'));
+		o.value('sim-primary', _('SIM principal, WAN secundaria'));
+		o.value('wan-primary', _('WAN principal, SIM secundaria'));
+		o.value('wan-as-lan', _('SIM principal, WAN como LAN'));
+		o.default = 'sim-primary';
 		o = s.option(form.DummyValue, '_metric_info', _('Prioridad efectiva'));
 		o.cfgvalue = function() { return modeInfo(currentMode); };
 		o = s.option(form.DummyValue, '_port_info', _('Puertos fisicos'));
 		o.cfgvalue = function() {
 			return currentMode === 'wan-as-lan' ? 'LAN + WAN unidos al bridge LAN' : 'Solo LAN en bridge; WAN separado';
 		};
-		o = s.option(form.ListValue, 'wan_mode', _('Modo del puerto WAN'));
-		o.value('sim-primary', _('SIM principal, WAN secundaria'));
-		o.value('wan-primary', _('WAN principal, SIM secundaria'));
-		o.value('wan-as-lan', _('WAN como puerto LAN'));
-		o.default = 'sim-primary';
 		o = s.option(form.ListValue, 'rat_pref', _('Modo radio'));
 		o.value('auto', _('Automatico'));
 		o.value('4g', _('Solo 4G'));
