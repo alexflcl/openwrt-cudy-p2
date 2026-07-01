@@ -25,8 +25,6 @@ log() {
 }
 
 run_locked() {
-    exec 9>"$LOCK_FILE"
-    flock -x 9
     "$@"
 }
 
@@ -42,7 +40,7 @@ capture_at() {
     sleep "$wait_s"
     kill "$cpid" >/dev/null 2>&1 || true
     wait "$cpid" 2>/dev/null || true
-    tr -d '\000' < "$tmp"
+    tr -d '\000\r' < "$tmp"
     rm -f "$tmp"
 }
 
@@ -55,6 +53,10 @@ at_ok() {
 
 at_query() {
     capture_at "$1" "${2:-3}" | sed '/^$/d'
+}
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
 ensure_links() {
@@ -219,6 +221,91 @@ show_modem_runtime() {
     echo "[MODEM_CAINFO]"
     out="$(at_query 'AT+QCAINFO' 3)"
     printf '%s\n' "$out" | grep -E '^\+QCAINFO:' || true
+}
+
+summary_impl() {
+    load_cfg
+
+    local board_json sim_ready sim_id operator_qspn operator_cops csq qnwinfo
+    local qeng qca lte_line nr_line wwan_json wwan_ip dns uptime route_dev cpu_temp wifi2g_temp wifi5g_temp
+    local operator technology ca_summary rssi rsrp rsrq sinr oldifs
+
+    board_json="$(ubus call system board 2>/dev/null || echo '{}')"
+    sim_ready="$(at_query 'AT+CPIN?' 1 | sed -n 's/.*+CPIN: *//p' | head -n1)"
+    sim_id="$(at_query 'AT+QCCID' 1 | sed -n 's/.*+QCCID: *//p' | head -n1)"
+    operator_qspn="$(at_query 'AT+QSPN' 1 | sed -n 's/.*+QSPN: *\"\([^\"]*\)\".*/\1/p' | head -n1)"
+    operator_cops="$(at_query 'AT+COPS?' 1 | sed -n 's/.*+COPS: [^,]*,[^,]*,\"\([^\"]*\)\".*/\1/p' | head -n1)"
+    [ -n "$operator_qspn" ] && operator="$operator_qspn" || operator="$operator_cops"
+    csq="$(at_query 'AT+CSQ' 1 | sed -n 's/.*+CSQ: *\([0-9]*\).*/\1/p' | head -n1)"
+    qnwinfo="$(at_query 'AT+QNWINFO' 1 | grep '^\+QNWINFO:' || true)"
+    qeng="$(at_query 'AT+QENG=\"servingcell\"' 2 | grep '^\+QENG:' || true)"
+    qca="$(at_query 'AT+QCAINFO' 2 | grep '^\+QCAINFO:' || true)"
+
+    lte_line="$(printf '%s\n' "$qeng" | grep '^\+QENG: "LTE"' | head -n1 || true)"
+    nr_line="$(printf '%s\n' "$qeng" | grep '^\+QENG: "NR5G' | head -n1 || true)"
+
+    oldifs="$IFS"
+    if [ -n "$lte_line" ]; then
+        IFS=','
+        set -- $lte_line
+        IFS="$oldifs"
+        rssi="$(printf '%s' "${12:-}" | tr -d '"')"
+        rsrq="$(printf '%s' "${13:-}" | tr -d '"')"
+        rsrp="$(printf '%s' "${14:-}" | tr -d '"')"
+    fi
+    if [ -n "$nr_line" ]; then
+        IFS=','
+        set -- $nr_line
+        IFS="$oldifs"
+        sinr="$(printf '%s' "${6:-}" | tr -d '"')"
+    fi
+
+    technology="$(printf '%s\n' "$qnwinfo" | awk -F'\"' '/^\+QNWINFO:/ { if (out) out=out " + "; out=out $2 " | " $6 } END { print out }')"
+    if [ -z "$technology" ]; then
+        technology=""
+        printf '%s\n' "$qeng" | grep -q '^\+QENG: "LTE"' && technology="LTE"
+        if printf '%s\n' "$qeng" | grep -q '^\+QENG: "NR5G-NSA"'; then
+            if [ -n "$technology" ]; then
+                technology="$technology + NR5G-NSA"
+            else
+                technology="NR5G-NSA"
+            fi
+        fi
+    fi
+    ca_summary="$(printf '%s\n' "$qca" | awk -F'\"' '/^\+QCAINFO:/ { if (out) out=out " + "; out=out $2 " " $6 } END { print out }')"
+
+    wwan_json="$(ifstatus "$WWAN_IFACE" 2>/dev/null || echo '{}')"
+    wwan_ip="$(printf '%s' "$wwan_json" | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null || true)"
+    dns="$(printf '%s' "$wwan_json" | jsonfilter -e '@["dns-server"][0]' -e '@["dns-server"][1]' 2>/dev/null | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+    uptime="$(printf '%s' "$wwan_json" | jsonfilter -e '@.uptime' 2>/dev/null || true)"
+    route_dev="$(printf '%s' "$wwan_json" | jsonfilter -e '@.l3_device' 2>/dev/null || true)"
+
+    cpu_temp="$(get_temp_c /sys/class/thermal/thermal_zone0/temp)"
+    wifi2g_temp="$(get_temp_c /sys/class/hwmon/hwmon1/temp1_input)"
+    wifi5g_temp="$(get_temp_c /sys/class/hwmon/hwmon2/temp1_input)"
+
+    cat <<EOF
+{
+  "model": "$(json_escape "$(printf '%s' "$board_json" | jsonfilter -e '@.model' 2>/dev/null || echo Cudy\ P2)")",
+  "operator": "$(json_escape "$operator")",
+  "technology": "$(json_escape "$technology")",
+  "carrier_aggregation": "$(json_escape "$ca_summary")",
+  "sim_status": "$(json_escape "$sim_ready")",
+  "iccid": "$(json_escape "$sim_id")",
+  "csq": "$(json_escape "$csq")",
+  "rssi": "$(json_escape "$rssi")",
+  "rsrp": "$(json_escape "$rsrp")",
+  "rsrq": "$(json_escape "$rsrq")",
+  "sinr": "$(json_escape "$sinr")",
+  "cpu_temp": "$(json_escape "$cpu_temp")",
+  "wifi2g_temp": "$(json_escape "$wifi2g_temp")",
+  "wifi5g_temp": "$(json_escape "$wifi5g_temp")",
+  "wwan_ip": "$(json_escape "$wwan_ip")",
+  "dns": "$(json_escape "$dns")",
+  "route_device": "$(json_escape "$route_dev")",
+  "uptime": "$(json_escape "$uptime")"
+}
+EOF
 }
 
 apply_rat_pref() {
@@ -436,9 +523,10 @@ probe_impl() {
 case "${1:-status}" in
     connect) run_locked connect_impl ;;
     disconnect) run_locked disconnect_impl ;;
+    summary) run_locked summary_impl ;;
     status) run_locked status_impl ;;
     probe) run_locked probe_impl ;;
     temps) run_locked show_temps ;;
     apply-mode) run_locked apply_mode_impl "${2:-}" ;;
-    *) echo "Uso: $0 {connect|disconnect|status|probe|temps|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>}"; exit 1 ;;
+    *) echo "Uso: $0 {connect|disconnect|summary|status|probe|temps|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>}"; exit 1 ;;
 esac
