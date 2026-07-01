@@ -157,6 +157,28 @@ show_net_links() {
     ip -br link 2>/dev/null || true
 }
 
+show_port_status() {
+    echo "[PORT_STATUS]"
+
+    echo "### LAN ###"
+    ifstatus lan 2>/dev/null || {
+        echo "device=br-lan"
+        ip -br addr show br-lan 2>/dev/null || true
+    }
+    echo
+
+    echo "### WAN ###"
+    ifstatus wan 2>/dev/null || true
+    echo
+
+    echo "### WAN6 ###"
+    ifstatus wan6 2>/dev/null || true
+    echo
+
+    echo "### WWAN ###"
+    ifstatus "$WWAN_IFACE" 2>/dev/null || true
+}
+
 show_active_dns() {
     echo "[DNS]"
     sed -n '1,20p' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null || true
@@ -384,13 +406,9 @@ status_impl() {
     echo
     show_modem_runtime
     echo
+    show_port_status
+    echo
     show_net_links
-    echo
-    echo "[IFSTATUS_WAN]"
-    ifstatus wan 2>/dev/null || true
-    echo
-    echo "[IFSTATUS_WWAN]"
-    ifstatus "$WWAN_IFACE" 2>/dev/null || true
     echo
     echo "[BRIDGE_PORTS]"
     uci get "network.$(find_lan_device_section).ports" 2>/dev/null || true
