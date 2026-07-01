@@ -1,5 +1,6 @@
 "use strict";
 "require view";
+"require dom";
 "require form";
 "require fs";
 "require ui";
@@ -28,23 +29,43 @@ return view.extend({
 			uci.load('p2modem')
 		]);
 	},
+	queueApplyMode: function(mode) {
+		if (!mode)
+			return Promise.resolve();
+
+		var shellcmd = 'nohup /usr/bin/p2modemctl apply-mode ' + mode + ' >/tmp/p2modem-apply.log 2>&1 &';
+		return fs.exec_direct('/bin/sh', [ '-c', shellcmd ], 'text');
+	},
+	readSelectedMode: function(name, fallback) {
+		var el = document.querySelector('select[id*="' + name + '"]');
+		return el ? el.value : fallback;
+	},
+	handleSave: function(ev) {
+		var tasks = [];
+
+		document.getElementById('maincontent').querySelectorAll('.cbi-map').forEach(function(map) {
+			tasks.push(dom.callClassMethod(map, 'save'));
+		});
+
+		return Promise.all(tasks);
+	},
+	handleSaveApply: function(ev, mode) {
+		var wanMode = this.readSelectedMode('wan_mode', 'sim-primary');
+		var ratMode = this.readSelectedMode('rat_pref', 'auto');
+
+		return this.handleSave(ev).then(L.bind(function() {
+			return Promise.all([
+				this.queueApplyMode(wanMode),
+				this.queueApplyMode(ratMode)
+			]);
+		}, this)).then(function() {
+			return ui.changes.apply(mode === '0');
+		});
+	},
 	handleAction: function(action, extra) {
 		var args = [ action ];
 		if (extra)
 			args.push(extra);
-
-		if (action === 'apply-mode') {
-			var mode = extra || 'sim-primary';
-			var shellcmd = 'nohup /usr/bin/p2modemctl apply-mode ' + mode + ' >/tmp/p2modem-apply.log 2>&1 &';
-			return fs.exec_direct('/bin/sh', [ '-c', shellcmd ], 'text').then(function() {
-				ui.showModal(_('P2 Modem'), [
-					E('p', _('Cambio lanzado en segundo plano. Espera 10-20 segundos y pulsa "Refresh status".')),
-					E('div', { 'class': 'right' }, [ E('button', { 'class': 'btn', 'click': ui.hideModal }, [ _('Close') ]) ])
-				]);
-			}).catch(function(err) {
-				ui.addNotification(null, E('p', err.message || err));
-			});
-		}
 
 		return fs.exec_direct('/usr/bin/p2modemctl', args, 'text').then(function(res) {
 			ui.showModal(_('P2 Modem: %s').format(action), [
@@ -59,7 +80,7 @@ return view.extend({
 		var status = data[0] || '';
 		var currentMode = uci.get('p2modem', 'main', 'wan_mode') || 'sim-primary';
 		var currentRat = uci.get('p2modem', 'main', 'rat_pref') || 'auto';
-		var m = new form.Map('p2modem', _('P2 Modem'), _('Configura el modem interno del Cudy P2, el comportamiento WAN/LAN y el modo radio 4G/5G. Para aplicar un cambio usa su boton correspondiente.'));
+		var m = new form.Map('p2modem', _('P2 Modem'), _('Configura el modem interno del Cudy P2, el comportamiento WAN/LAN y el modo radio 4G/5G. Los cambios se aplican con el flujo normal de OpenWrt al pulsar "Save & Apply".'));
 		var s = m.section(form.TypedSection, 'settings', _('Ajustes'));
 		s.anonymous = true;
 		s.addremove = false;
@@ -90,20 +111,19 @@ return view.extend({
 		o = s.option(form.DummyValue, '_rat_info', _('Radio efectiva'));
 		o.cfgvalue = function() { return ratInfo(currentRat); };
 		return m.render().then(L.bind(function(nodes) {
-			var modeSelect = nodes.querySelector('select[id*="wan_mode"]');
-			var ratSelect = nodes.querySelector('select[id*="rat_pref"]');
 			nodes.appendChild(E('div', { 'class': 'cbi-page-actions' }, [
 				E('button', { 'class': 'btn cbi-button cbi-button-action important', 'click': ui.createHandlerFn(this, 'handleAction', 'connect') }, [ _('Connect SIM') ]),
 				' ',
 				E('button', { 'class': 'btn cbi-button cbi-button-action', 'click': ui.createHandlerFn(this, 'handleAction', 'disconnect') }, [ _('Disconnect SIM') ]),
 				' ',
-				E('button', { 'class': 'btn cbi-button cbi-button-positive important', 'click': ui.createHandlerFn(this, function() { return this.handleAction('apply-mode', modeSelect ? modeSelect.value : 'sim-primary'); }) }, [ _('Apply WAN mode') ]),
-				' ',
-				E('button', { 'class': 'btn cbi-button cbi-button-positive', 'click': ui.createHandlerFn(this, function() { return this.handleAction('apply-mode', ratSelect ? ratSelect.value : 'auto'); }) }, [ _('Apply radio mode') ]),
-				' ',
 				E('button', { 'class': 'btn cbi-button', 'click': ui.createHandlerFn(this, 'handleAction', 'status') }, [ _('Refresh status') ])
 			]));
-			nodes.appendChild(E('div', { 'class': 'cbi-section' }, [ E('h3', {}, [ _('Current status') ]), E('pre', { 'style': 'white-space: pre-wrap' }, [ status || _('No status available') ]) ]));
+			nodes.appendChild(E('details', { 'class': 'cbi-section' }, [
+				E('summary', { 'style': 'cursor: pointer; font-weight: bold; margin-bottom: 0.75rem;' }, [ _('Current status') ]),
+				E('pre', {
+					'style': 'white-space: pre-wrap; max-height: 18rem; overflow: auto; margin-top: 0.5rem;'
+				}, [ status || _('No status available') ])
+			]));
 			return nodes;
 		}, this));
 	}
