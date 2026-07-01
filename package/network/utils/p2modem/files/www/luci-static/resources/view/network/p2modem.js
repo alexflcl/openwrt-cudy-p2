@@ -6,6 +6,107 @@
 "require ui";
 "require uci";
 
+function parseSections(status) {
+	var lines = String(status || "").split(/\r?\n/);
+	var sections = {};
+	var current = "_top";
+
+	sections[current] = [];
+
+	lines.forEach(function(line) {
+		var m = line.match(/^\[([A-Z0-9_]+)\]$/);
+
+		if (m) {
+			current = m[1];
+			sections[current] = [];
+			return;
+		}
+
+		sections[current].push(line);
+	});
+
+	return sections;
+}
+
+function firstMatch(text, regex, fallback) {
+	var m = String(text || "").match(regex);
+	return m ? m[1] : (fallback || "");
+}
+
+function mergeStatusIntoSummary(summary, status) {
+	var s = Object.assign({}, summary || {});
+	var sections = parseSections(status);
+	var qnw = (sections.MODEM_NETWORK || []).join("\n");
+	var sim = (sections.MODEM_SIM || []).join("\n");
+	var oper = (sections.MODEM_OPERATOR || []).join("\n");
+	var sig = (sections.MODEM_SIGNAL || []).join("\n");
+	var qeng = (sections.MODEM_SERVING_CELL || []).join("\n");
+	var qca = (sections.MODEM_CAINFO || []).join("\n");
+
+	if (!s.sim_status || s.sim_status === "-")
+		s.sim_status = firstMatch(sim, /\+CPIN:\s*([A-Z]+)/, s.sim_status);
+	if (!s.iccid || s.iccid === "-")
+		s.iccid = firstMatch(sim, /\+QCCID:\s*([0-9A-F]+)/, s.iccid);
+	if (!s.operator || s.operator === "-")
+		s.operator = firstMatch(oper, /\+QSPN:\s*"([^"]+)"/, s.operator || "-");
+	if (!s.operator || s.operator === "-")
+		s.operator = firstMatch(oper, /\+COPS:\s*[^,]*,[^,]*,"([^"]+)"/, s.operator || "-");
+	if (!s.csq)
+		s.csq = firstMatch(sig, /\+CSQ:\s*([0-9]+)/, "");
+
+	if (!s.technology || s.technology === "-") {
+		var techs = [];
+		String(qnw).split(/\r?\n/).forEach(function(line) {
+			var m = line.match(/\+QNWINFO:\s*"([^"]+)"[^,]*,"([^"]+)"/);
+			if (m)
+				techs.push(m[1] + " | " + m[2]);
+		});
+		if (techs.length)
+			s.technology = techs.join(" + ");
+	}
+
+	if (!s.carrier_aggregation || s.carrier_aggregation === "-") {
+		var ca = [];
+		String(qca).split(/\r?\n/).forEach(function(line) {
+			var m = line.match(/\+QCAINFO:\s*"([^"]+)",[^,]*,[^,]*,"([^"]+)"/);
+			if (m)
+				ca.push(m[1] + " " + m[2]);
+		});
+		if (ca.length)
+			s.carrier_aggregation = ca.join(" + ");
+	}
+
+	if ((!s.rssi || !s.rsrq || !s.rsrp) && qeng) {
+		var lte = String(qeng).split(/\r?\n/).find(function(line) {
+			return line.indexOf('+QENG: "LTE"') === 0;
+		});
+		if (lte) {
+			var parts = lte.split(",");
+			s.rssi = s.rssi || (parts[11] || "").replace(/"/g, "");
+			s.rsrq = s.rsrq || (parts[12] || "").replace(/"/g, "");
+			s.rsrp = s.rsrp || (parts[13] || "").replace(/"/g, "");
+		}
+	}
+
+	if (!s.sinr && qeng) {
+		var nr = String(qeng).split(/\r?\n/).find(function(line) {
+			return line.indexOf('+QENG: "NR5G-NSA"') === 0 || line.indexOf('+QENG: "NR5G-SA"') === 0;
+		});
+		if (nr) {
+			var nrparts = nr.split(",");
+			s.sinr = (nrparts[5] || "").replace(/"/g, "");
+		}
+	}
+
+	s.operator = s.operator || "-";
+	s.technology = s.technology || "-";
+	s.carrier_aggregation = s.carrier_aggregation || "-";
+	s.sim_status = s.sim_status || "-";
+	s.iccid = s.iccid || "-";
+
+	return s;
+}
+
 function modeInfo(mode) {
 	if (mode === "wan-primary")
 		return "WAN=10 / SIM=20 / DNS por WAN";
@@ -175,9 +276,15 @@ function makeTabs(sections, initialName) {
 return view.extend({
 	rawStatusText: "",
 	rawStatusNode: null,
+	statsNode: null,
+	summaryData: null,
 	load: function() {
 		return Promise.all([
-			L.resolveDefault(fs.exec_direct("/usr/bin/p2modemctl", [ "summary" ], "json"), "{}"),
+			L.resolveDefault(fs.exec_direct("/bin/sh", [ "-c", "ubus call system board" ], "json"), {}),
+			L.resolveDefault(fs.exec_direct("/bin/sh", [ "-c", "ifstatus wwan" ], "json"), {}),
+			L.resolveDefault(fs.exec_direct("/bin/sh", [ "-c", "awk '{ printf \"%.1f\", $1 / 1000 }' /sys/class/thermal/thermal_zone0/temp 2>/dev/null; echo" ], "text"), ""),
+			L.resolveDefault(fs.exec_direct("/bin/sh", [ "-c", "awk '{ printf \"%.1f\", $1 / 1000 }' /sys/class/hwmon/hwmon1/temp1_input 2>/dev/null; echo" ], "text"), ""),
+			L.resolveDefault(fs.exec_direct("/bin/sh", [ "-c", "awk '{ printf \"%.1f\", $1 / 1000 }' /sys/class/hwmon/hwmon2/temp1_input 2>/dev/null; echo" ], "text"), ""),
 			uci.load("p2modem")
 		]);
 	},
@@ -226,6 +333,9 @@ return view.extend({
 			self.rawStatusText = res || _("No status available");
 			if (self.rawStatusNode)
 				self.rawStatusNode.textContent = self.rawStatusText;
+			self.summaryData = mergeStatusIntoSummary(self.summaryData, self.rawStatusText);
+			if (self.statsNode)
+				dom.content(self.statsNode, self.renderStats(self.summaryData));
 		}).catch(function(err) {
 			if (self.rawStatusNode)
 				self.rawStatusNode.textContent = err.message || String(err);
@@ -266,19 +376,46 @@ return view.extend({
 				statRow("CPU", summary.cpu_temp ? summary.cpu_temp + " C" : "-"),
 				statRow("WiFi 2.4 GHz", summary.wifi2g_temp ? summary.wifi2g_temp + " C" : "-"),
 				statRow("WiFi 5 GHz", summary.wifi5g_temp ? summary.wifi5g_temp + " C" : "-")
+			]),
+			E("div", { "class": "cbi-section" }, [
+				E("div", { "style": "color:#6b7280;" }, [
+					"La telemetria avanzada del modem se consulta solo al pulsar ",
+					E("strong", {}, [ "Refresh status" ]),
+					" para que la pagina cargue rapido."
+				])
 			])
 		]);
 	},
 	render: function(data) {
-		var summary = {};
+		var board = data[0] || {};
+		var wwan = data[1] || {};
 		var currentMode = uci.get("p2modem", "main", "wan_mode") || "sim-primary";
 		var currentRat = uci.get("p2modem", "main", "rat_pref") || "auto";
-		var m = new form.Map("p2modem", _("P2 Modem"), _("Gestion del modem interno del Cudy P2 con estadisticas visuales, configuracion del enlace movil y estado detallado para diagnostico."));
+		var m = new form.Map("p2modem", _("P2 Modem"), _("Gestion del modem interno del Cudy P2 con estadisticas rapidas, configuracion del enlace movil y estado detallado bajo demanda."));
 		var s = m.section(form.TypedSection, "settings", _("Configuracion"));
 		var self = this;
 		var o;
-
-		try { summary = JSON.parse(data[0] || "{}"); } catch (e) {}
+		var summary = {
+			model: board.model || "-",
+			operator: "-",
+			technology: "-",
+			carrier_aggregation: "-",
+			sim_status: "-",
+			iccid: "-",
+			csq: "",
+			rssi: "",
+			rsrp: "",
+			rsrq: "",
+			sinr: "",
+			cpu_temp: String(data[2] || "").trim(),
+			wifi2g_temp: String(data[3] || "").trim(),
+			wifi5g_temp: String(data[4] || "").trim(),
+			wwan_ip: (wwan["ipv4-address"] && wwan["ipv4-address"][0] && wwan["ipv4-address"][0].address) || "-",
+			dns: (wwan["dns-server"] || []).join(", ") || "-",
+			route_device: wwan.l3_device || (wwan.device || "-"),
+			uptime: wwan.uptime || 0
+		};
+		self.summaryData = summary;
 
 		s.anonymous = true;
 		s.addremove = false;
@@ -310,9 +447,10 @@ return view.extend({
 		o.cfgvalue = function() { return ratInfo(currentRat); };
 
 		return m.render().then(L.bind(function(nodes) {
-			self.rawStatusNode = E("pre", { "style": "white-space:pre-wrap; max-height:26rem; overflow:auto; margin-top:.5rem;" }, [ _("Pulsa \"Refresh status\" para cargar el volcado completo.") ]);
+			self.rawStatusNode = E("pre", { "style": "white-space:pre-wrap; max-height:26rem; overflow:auto; margin-top:.5rem;" }, [ _("Pulsa \"Refresh status\" para consultar el estado detallado del modem.") ]);
+			self.statsNode = E("div");
+			dom.content(self.statsNode, self.renderStats(summary));
 
-			var statsNode = self.renderStats(summary);
 			var configNode = E("div", {}, [
 				E("div", { "class": "cbi-page-actions" }, [
 					E("button", { "class": "btn cbi-button cbi-button-action important", "click": ui.createHandlerFn(self, "handleAction", "connect") }, [ _("Connect SIM") ]),
@@ -333,7 +471,7 @@ return view.extend({
 
 			return E("div", {}, [
 				makeTabs([
-					{ name: "stats", title: _("Stats"), node: statsNode },
+					{ name: "stats", title: _("Stats"), node: self.statsNode },
 					{ name: "config", title: _("Configuracion"), node: configNode },
 					{ name: "raw", title: _("Raw status"), node: rawNode }
 				], "stats")
