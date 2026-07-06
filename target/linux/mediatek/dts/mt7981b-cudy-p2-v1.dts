@@ -134,6 +134,26 @@
 			label = "lan";
 		};
 
+		port@2 {
+			reg = <2>;
+			status = "disabled";
+		};
+
+		port@3 {
+			reg = <3>;
+			status = "disabled";
+		};
+
+		port@4 {
+			reg = <4>;
+			status = "disabled";
+		};
+
+		port@5 {
+			reg = <5>;
+			status = "disabled";
+		};
+
 		port@6 {
 			reg = <6>;
 			label = "cpu";
