@@ -1,0 +1,15 @@
+#!/bin/sh
+
+. /lib/functions/system.sh
+
+board="$(board_name)"
+
+case "$board" in
+	cudy,p2-v1)
+		uci -q set network.lan.dns='1.1.1.1 8.8.8.8'
+		uci -q set network.lan.peerdns='0'
+		uci commit network
+		;;
+esac
+
+exit 0
