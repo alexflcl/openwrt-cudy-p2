@@ -1,0 +1,9 @@
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_p2-v1=y
+CONFIG_DEVEL=y
+CONFIG_CCACHE=y
+CONFIG_PACKAGE_kmod-sprd-pcie=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl=y
+CONFIG_PACKAGE_luci-app-p2modem=y
