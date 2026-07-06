@@ -1,0 +1,101 @@
+name: Build Cudy P2 firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-cudy-p2-firmware.yml'
+      - 'configs/cudy-p2-defconfig'
+      - 'scripts/cudy-p2-prepare-vendor-driver.sh'
+      - 'package/base-files/files/etc/uci-defaults/99-cudy-p2-defaults'
+      - 'package/network/services/luci-app-p2modem/**'
+      - 'target/linux/mediatek/dts/mt7981b-cudy-p2-v1.dts'
+      - 'target/linux/mediatek/image/filogic.mk'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-cudy-p2:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prepare build host
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+            build-essential bzip2 ccache cmake cpio curl device-tree-compiler \
+            fastjar flex gawk gettext gcc-multilib g++-multilib git gperf \
+            haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev \
+            libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
+            libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
+            lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf \
+            python3 python3-pip python3-ply python3-docutils python3-pyelftools \
+            qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+            upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+
+      - name: Add sprdpcie feed
+        run: |
+          if ! grep -q '^src-git sprdpcie ' feeds.conf.default; then
+            echo 'src-git sprdpcie https://github.com/zekica/openwrt-sprd-pcie' >> feeds.conf.default
+          fi
+
+      - name: Apply upstream PCIe compatibility patch
+        run: |
+          curl -L https://github.com/openwrt/openwrt/commit/6f7a1d3ee8a8ccc632a6939c79262ef15419f37f.patch -o /tmp/cudy-p2-openwrt.patch
+          patch -N -p1 < /tmp/cudy-p2-openwrt.patch || true
+
+      - name: Update and install feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Patch vendor driver log spam
+        run: |
+          chmod +x ./scripts/cudy-p2-prepare-vendor-driver.sh
+          chmod +x ./package/network/services/luci-app-p2modem/root/etc/init.d/p2modem
+          chmod +x ./package/network/services/luci-app-p2modem/root/usr/bin/p2modemctl
+          ./scripts/cudy-p2-prepare-vendor-driver.sh
+
+      - name: Prepare defconfig
+        run: |
+          cp configs/cudy-p2-defconfig .config
+          make defconfig
+
+      - name: Build firmware
+        run: |
+          make download -j"$(nproc)"
+          make -j"$(nproc)" V=s 2>&1 | tee build.log
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts/firmware
+          cp -a bin/targets/mediatek/filogic/. artifacts/firmware/
+          cp .config artifacts/firmware/cudy-p2-used.config
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: cudy-p2-firmware
+          path: artifacts/firmware
+          if-no-files-found: error
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cudy-p2-build-logs
+          path: |
+            logs
+            build.log
+          if-no-files-found: ignore
