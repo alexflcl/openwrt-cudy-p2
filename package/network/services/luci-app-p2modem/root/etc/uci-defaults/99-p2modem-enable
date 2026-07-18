@@ -1,0 +1,6 @@
+#!/bin/sh
+
+/etc/init.d/p2modem enable
+/etc/init.d/p2modem start
+
+exit 0
