@@ -65,6 +65,8 @@ jobs:
         run: |
           cp configs/cudy-p2-defconfig .config
           make defconfig
+          echo 'Selected P2 configuration:'
+          grep -E '^(CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_p2-v1|CONFIG_PACKAGE_kmod-sprd-pcie|CONFIG_PACKAGE_luci-app-p2modem)=' .config || true
           grep -qx 'CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_p2-v1=y' .config
           grep -qx 'CONFIG_PACKAGE_kmod-sprd-pcie=y' .config
           grep -qx 'CONFIG_PACKAGE_luci-app-p2modem=y' .config
