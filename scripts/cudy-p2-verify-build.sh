@@ -19,4 +19,3 @@ grep -q 'CONFIG_PACKAGE_kmod-sprd-pcie=y' configs/cudy-p2-defconfig || fail "SPR
 grep -q 'CONFIG_PACKAGE_luci-app-p2modem=y' configs/cudy-p2-defconfig || fail "p2modem not selected"
 
 echo 'Cudy P2 source validation passed'
-
