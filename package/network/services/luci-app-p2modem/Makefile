@@ -2,6 +2,8 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-p2modem
 PKG_RELEASE:=3
+PKG_LICENSE:=Apache-2.0
+PKG_MAINTAINER:=alexflcl
 
 LUCI_TITLE:=LuCI support for Cudy P2 PCIe modem control
 LUCI_DEPENDS:=+luci-base +luci-mod-network +luci-lib-base +firewall4 +kmod-sprd-pcie +kmod-usb-serial-option
