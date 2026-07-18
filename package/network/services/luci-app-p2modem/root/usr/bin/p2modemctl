@@ -151,9 +151,11 @@ connect_impl() {
 	ensure_wwan
 	wait_for_hardware || return 1
 	if [ "$PCIE_INITIALIZED" != 1 ]; then
-		bootstrap_impl
+		bootstrap_impl || return 1
+		# QCFG is persistent and does not need a CFUN reset. Continue with the
+		# normal SIM connection now so the first boot can bring WWAN online.
+		load_cfg
 		log "Configuracion PCIe aplicada; continuando la conexion"
-		return 0
 	fi
 	if ! sim_state >/tmp/p2modem-sim.log 2>&1; then
 		log "SIM no preparada: $(tr '\n' ' ' </tmp/p2modem-sim.log | sed 's/  */ /g')"
