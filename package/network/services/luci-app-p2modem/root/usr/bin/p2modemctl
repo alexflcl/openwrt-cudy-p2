@@ -93,7 +93,10 @@ set_lan_ports() {
 }
 
 ensure_wwan() {
-	local zone networks
+	local zone networks runtime_missing=0
+	if ! ifstatus "$WWAN_IFACE" >/dev/null 2>&1; then
+		runtime_missing=1
+	fi
 	uci set "network.${WWAN_IFACE}=interface"
 	uci set "network.${WWAN_IFACE}.proto=dhcp"
 	uci set "network.${WWAN_IFACE}.device=$DATA_IF"
@@ -107,6 +110,12 @@ ensure_wwan() {
 	fi
 	uci commit network
 	uci commit firewall
+	# netifd only reads a new interface after a reload. Avoid doing this
+	# on later connection attempts once WWAN already exists at runtime.
+	if [ "$runtime_missing" = 1 ]; then
+		ubus call network reload >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true
+		sleep 1
+	fi
 	/etc/init.d/firewall reload >/dev/null 2>&1 || true
 }
 
