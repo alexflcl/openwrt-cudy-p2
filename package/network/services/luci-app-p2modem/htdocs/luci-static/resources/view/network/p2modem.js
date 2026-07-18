@@ -33,8 +33,7 @@ return view.extend({
 		if (!mode)
 			return Promise.resolve();
 
-		var shellcmd = 'nohup /usr/bin/p2modemctl apply-mode ' + mode + ' >/tmp/p2modem-apply.log 2>&1 &';
-		return fs.exec_direct('/bin/sh', [ '-c', shellcmd ], 'text');
+		return fs.exec_direct('/usr/bin/p2modemctl', [ 'apply-mode', mode ], 'text');
 	},
 	readSelectedMode: function(name, fallback) {
 		var el = document.querySelector('select[id*="' + name + '"]');
@@ -86,7 +85,7 @@ return view.extend({
 		s.addremove = false;
 		var o;
 		o = s.option(form.Flag, 'enabled', _('Activado en arranque')); o.default = '1';
-		o = s.option(form.Value, 'apn', _('APN')); o.placeholder = 'internet'; o.rmempty = false;
+		o = s.option(form.Value, 'apn', _('APN')); o.placeholder = _('Detect from modem profile'); o.rmempty = true;
 		o = s.option(form.ListValue, 'pdp_type', _('Tipo PDP')); o.value('IP'); o.value('IPV4V6'); o.default = 'IP';
 		o = s.option(form.Value, 'at_port', _('Puerto AT')); o.placeholder = '/dev/stty_nr31';
 		o = s.option(form.Value, 'data_if', _('Interfaz de datos')); o.placeholder = 'pcie0';
@@ -116,7 +115,7 @@ return view.extend({
 				' ',
 				E('button', { 'class': 'btn cbi-button cbi-button-action', 'click': ui.createHandlerFn(this, 'handleAction', 'disconnect') }, [ _('Disconnect SIM') ]),
 				' ',
-				E('button', { 'class': 'btn cbi-button', 'click': ui.createHandlerFn(this, 'handleAction', 'status') }, [ _('Refresh status') ])
+				E('button', { 'class': 'btn cbi-button', 'click': ui.createHandlerFn(this, 'handleAction', 'details') }, [ _('Refresh detailed status') ])
 			]));
 			nodes.appendChild(E('details', { 'class': 'cbi-section' }, [
 				E('summary', { 'style': 'cursor: pointer; font-weight: bold; margin-bottom: 0.75rem;' }, [ _('Current status') ]),
