@@ -10,8 +10,7 @@
     "write": {
       "uci": [ "p2modem", "network", "system" ],
       "file": {
-        "/usr/bin/p2modemctl *": [ "exec" ],
-        "/bin/sh -c *": [ "exec" ]
+        "/usr/bin/p2modemctl *": [ "exec" ]
       }
     }
   }
