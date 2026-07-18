@@ -152,7 +152,7 @@ connect_impl() {
 	wait_for_hardware || return 1
 	if [ "$PCIE_INITIALIZED" != 1 ]; then
 		bootstrap_impl
-		log "Esperando el reinicio del modem; vuelve a intentar la conexion en un minuto"
+		log "Configuracion PCIe aplicada; continuando la conexion"
 		return 0
 	fi
 	if ! sim_state >/tmp/p2modem-sim.log 2>&1; then
@@ -226,4 +226,3 @@ case "${1:-status}" in
 	details) with_lock details_impl ;;
 	*) echo "Uso: $0 {start|connect|bootstrap|disconnect|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>|status|details}"; exit 1 ;;
 esac
-
