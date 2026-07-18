@@ -15,6 +15,9 @@ fi
 
 grep -q 'cudy,p2-v1)' target/linux/mediatek/base-files/lib/preinit/05_set_preinit_iface || fail "P2 preinit handler missing"
 grep -q 'ucidef_set_interfaces_lan_wan lan wan' target/linux/mediatek/filogic/base-files/etc/board.d/02_network || fail "P2 LAN/WAN defaults missing"
+grep -q 'label = "lan";' target/linux/mediatek/dts/mt7981b-cudy-p2-v1.dts || fail "P2 physical LAN label missing"
+grep -q 'label = "wan";' target/linux/mediatek/dts/mt7981b-cudy-p2-v1.dts || fail "P2 physical WAN label missing"
+grep -q "network.lan.dns='1.1.1.1 8.8.8.8'" package/base-files/files/etc/uci-defaults/99-cudy-p2-defaults || fail "P2 LAN DNS defaults missing"
 grep -q 'CONFIG_PACKAGE_kmod-sprd-pcie=y' configs/cudy-p2-defconfig || fail "SPRD PCIe driver not selected"
 grep -q 'CONFIG_PACKAGE_luci-app-p2modem=y' configs/cudy-p2-defconfig || fail "p2modem not selected"
 
