@@ -140,8 +140,9 @@ bootstrap_impl() {
 	at_ok 'AT+QCFG="nat",0' 3 >>/tmp/p2modem-bootstrap.log 2>&1 || { log "No se pudo desactivar NAT del modem"; return 1; }
 	uci set p2modem.main.pcie_initialized='1'
 	uci commit p2modem
-	log "Configuracion PCIe aplicada; reiniciando el modem"
-	at_capture 'AT+CFUN=1,1' 2 >/tmp/p2modem-bootstrap.log 2>&1 || true
+	# The PCIe transport stays available after QCFG. Do not reset the modem here:
+	# CFUN=1,1 can reset the complete PCIe endpoint and disrupt the router itself.
+	log "Configuracion PCIe aplicada sin reinicio forzado del modem"
 }
 
 connect_impl() {
