@@ -87,9 +87,17 @@ jobs:
           grep -q 'luci-app-p2modem' "$target_dir"/*cudy_p2-v1.manifest
           p2modem_pkg="$(find bin/packages -type f \( -name 'luci-app-p2modem*.apk' -o -name 'luci-app-p2modem*.ipk' \) -print -quit)"
           test -n "$p2modem_pkg"
-          tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*usr/bin/p2modemctl"
-          tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*etc/init.d/p2modem"
-          tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*etc/uci-defaults/99-p2modem-enable"
+          # OpenWrt 25.12 packages use APK v3 (ADB), not tar/IPK.
+          if [ "${p2modem_pkg##*.}" = "apk" ]; then
+            package_dump="$(staging_dir/host/bin/apk adbdump --format json "$p2modem_pkg")"
+            printf '%s\n' "$package_dump" | grep -q 'usr/bin/p2modemctl'
+            printf '%s\n' "$package_dump" | grep -q 'etc/init.d/p2modem'
+            printf '%s\n' "$package_dump" | grep -q 'etc/uci-defaults/99-p2modem-enable'
+          else
+            tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*usr/bin/p2modemctl"
+            tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*etc/init.d/p2modem"
+            tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*etc/uci-defaults/99-p2modem-enable"
+          fi
           mkdir -p artifacts/firmware
           cp "$sysupgrade" "$initramfs" "$target_dir"/*cudy_p2-v1.manifest "$target_dir"/sha256sums artifacts/firmware/
           cp .config artifacts/firmware/cudy-p2-used.config
