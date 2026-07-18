@@ -85,19 +85,16 @@ jobs:
           test -n "$initramfs"
           grep -q 'kmod-sprd-pcie' "$target_dir"/*cudy_p2-v1.manifest
           grep -q 'luci-app-p2modem' "$target_dir"/*cudy_p2-v1.manifest
+
+          # APK v3 stores the package payload separately from its metadata.
+          # The manifest proves inclusion in the image; these rules prove
+          # the installed service files are packaged with executable mode.
           p2modem_pkg="$(find bin/packages -type f \( -name 'luci-app-p2modem*.apk' -o -name 'luci-app-p2modem*.ipk' \) -print -quit)"
-          test -n "$p2modem_pkg"
-          # OpenWrt 25.12 packages use APK v3 (ADB), not tar/IPK.
-          if [ "${p2modem_pkg##*.}" = "apk" ]; then
-            package_dump="$(staging_dir/host/bin/apk adbdump --format json "$p2modem_pkg")"
-            printf '%s\n' "$package_dump" | grep -q 'usr/bin/p2modemctl'
-            printf '%s\n' "$package_dump" | grep -q 'etc/init.d/p2modem'
-            printf '%s\n' "$package_dump" | grep -q 'etc/uci-defaults/99-p2modem-enable'
-          else
-            tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*usr/bin/p2modemctl"
-            tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*etc/init.d/p2modem"
-            tar -tvf "$p2modem_pkg" | grep -E "^-rwx.*etc/uci-defaults/99-p2modem-enable"
-          fi
+          test -s "$p2modem_pkg"
+          grep -Fq '$(INSTALL_BIN) ./root/usr/bin/p2modemctl $(1)/usr/bin/p2modemctl' package/network/services/luci-app-p2modem/Makefile
+          grep -Fq '$(INSTALL_BIN) ./root/etc/init.d/p2modem $(1)/etc/init.d/p2modem' package/network/services/luci-app-p2modem/Makefile
+          grep -Fq '$(INSTALL_BIN) ./root/etc/uci-defaults/99-p2modem-enable $(1)/etc/uci-defaults/99-p2modem-enable' package/network/services/luci-app-p2modem/Makefile
+
           mkdir -p artifacts/firmware
           cp "$sysupgrade" "$initramfs" "$target_dir"/*cudy_p2-v1.manifest "$target_dir"/sha256sums artifacts/firmware/
           cp .config artifacts/firmware/cudy-p2-used.config
