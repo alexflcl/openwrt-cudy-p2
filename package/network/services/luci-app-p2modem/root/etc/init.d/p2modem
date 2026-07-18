@@ -3,10 +3,10 @@
 START=95
 STOP=10
 
-start_service() {
+start() {
 	/usr/bin/p2modemctl start >/tmp/p2modem-start.log 2>&1 &
 }
 
-stop_service() {
+stop() {
 	/usr/bin/p2modemctl disconnect >/tmp/p2modem-stop.log 2>&1 || true
 }
