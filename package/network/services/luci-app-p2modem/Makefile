@@ -26,6 +26,10 @@ endef
 define Package/luci-app-p2modem/install
 	$(INSTALL_DIR) $(1)/
 	$(CP) ./root/* $(1)/
+	$(INSTALL_DIR) $(1)/usr/bin $(1)/etc/init.d $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./root/usr/bin/p2modemctl $(1)/usr/bin/p2modemctl
+	$(INSTALL_BIN) ./root/etc/init.d/p2modem $(1)/etc/init.d/p2modem
+	$(INSTALL_BIN) ./root/etc/uci-defaults/99-p2modem-enable $(1)/etc/uci-defaults/99-p2modem-enable
 	$(INSTALL_DIR) $(1)/www
 	$(CP) ./htdocs/* $(1)/www/
 endef
