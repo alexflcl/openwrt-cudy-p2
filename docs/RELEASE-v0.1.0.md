@@ -28,4 +28,4 @@ Build commit: `c1d77b7ce3b9c1203432c5deebb1d092db66a942`
 
 ## Important
 
-This release is experimental. Read [INSTALL.md](INSTALL.md) before flashing and keep UART recovery equipment available.
+This release is experimental. Read [INSTALL.md](https://github.com/alexflcl/openwrt-cudy-p2/blob/rebuild/p2-firmware-clean/docs/INSTALL.md) before flashing and keep UART recovery equipment available.
