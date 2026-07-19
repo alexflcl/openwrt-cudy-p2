@@ -347,6 +347,7 @@ return view.extend({
 			};
 
 			var smsTimer = null;
+			var self = this;
 
 			function selectTab(name) {
 				Object.keys(panels).forEach(function(key) {
@@ -360,8 +361,8 @@ return view.extend({
 					smsTimer = null;
 				}
 				if (name === 'sms') {
-					this.refreshSms();
-					smsTimer = window.setInterval(L.bind(this.refreshSms, this), 10000);
+					self.refreshSms();
+					smsTimer = window.setInterval(L.bind(self.refreshSms, self), 10000);
 				}
 			}
 
