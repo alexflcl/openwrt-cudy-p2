@@ -35,7 +35,8 @@ jobs:
         run: |
           tag='v0.1.0-p2modem'
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists; keeping its published assets."
+            gh release edit "$tag" --notes-file docs/RELEASE-v0.1.0.md
+            echo "Release $tag notes updated; keeping its published assets."
             exit 0
           fi
 
