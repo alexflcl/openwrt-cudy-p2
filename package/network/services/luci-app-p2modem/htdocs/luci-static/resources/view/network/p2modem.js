@@ -87,6 +87,98 @@ return view.extend({
 		});
 	},
 
+
+	parseSms: function(output) {
+		var messages = [];
+		var current = null;
+
+		(output || '').replace(/\r/g, '').split('\n').forEach(function(line) {
+			var match = line.match(/^\+CMGL:\s*(\d+),"([^"]*)","([^"]*)".*,"([^"]*)"\s*$/);
+
+			if (match) {
+				if (current)
+					messages.push(current);
+				current = {
+					index: match[1],
+					status: match[2],
+					sender: match[3],
+					date: match[4],
+					body: []
+				};
+			}
+			else if (current && line && line !== 'OK' && !/^AT\+CMGL/.test(line)) {
+				current.body.push(line);
+			}
+		});
+
+		if (current)
+			messages.push(current);
+
+		return messages;
+	},
+
+	showSms: function(message) {
+		ui.showModal(_('SMS de %s').format(message.sender || _('Unknown')), [
+			E('dl', { 'class': 'cbi-value-field' }, [
+				E('dt', {}, [ _('Estado') ]), E('dd', {}, [ message.status || '-' ]),
+				E('dt', {}, [ _('Fecha') ]), E('dd', {}, [ message.date || '-' ])
+			]),
+			E('pre', { 'style': 'white-space:pre-wrap;max-height:24rem;overflow:auto' },
+				[ message.body.join('\n') || _('Empty message') ]),
+			E('div', { 'class': 'right' }, [
+				E('button', { 'class': 'btn', 'click': ui.hideModal }, [ _('Close') ])
+			])
+		]);
+	},
+
+	refreshSms: function() {
+		var output = document.getElementById('p2modem-sms-output');
+
+		if (output)
+			output.textContent = _('Leyendo SMS de la SIM...');
+
+		return fs.exec_direct('/usr/bin/p2modemctl', [ 'sms-list' ], 'text').then(L.bind(function(res) {
+			var messages = this.parseSms(res || '');
+			var rows;
+
+			if (!messages.length) {
+				output.textContent = _('No hay SMS almacenados en la SIM.');
+				return;
+			}
+
+			rows = messages.map(L.bind(function(message) {
+				return E('tr', {}, [
+					E('td', {}, [ message.index ]),
+					E('td', {}, [ message.status || '-' ]),
+					E('td', {}, [ message.sender || '-' ]),
+					E('td', {}, [ message.date || '-' ]),
+					E('td', {}, [ (message.body.join(' ') || '-').slice(0, 72) ]),
+					E('td', {}, [
+						E('button', {
+							'class': 'btn cbi-button',
+							'click': L.bind(this.showSms, this, message)
+						}, [ _('Leer') ])
+					])
+				]);
+			}, this));
+
+			dom.content(output, E('table', { 'class': 'table cbi-section-table' }, [
+				E('tr', { 'class': 'tr table-titles' }, [
+					E('th', { 'class': 'th' }, [ '#' ]),
+					E('th', { 'class': 'th' }, [ _('Estado') ]),
+					E('th', { 'class': 'th' }, [ _('Remitente') ]),
+					E('th', { 'class': 'th' }, [ _('Fecha') ]),
+					E('th', { 'class': 'th' }, [ _('Vista previa') ]),
+					E('th', { 'class': 'th' }, [ '' ])
+				]),
+				rows
+			]));
+		}, this)).catch(function(err) {
+			if (output)
+				output.textContent = err.message || String(err);
+		});
+	},
+
 	updateAdvancedStats: function(output) {
 		var operator = output.match(/\+COPS:\s*\d+,\d+,"([^"]+)"/);
 		var technology = output.match(/\+QNWINFO:\s*"([^"]+)"/);
@@ -203,10 +295,27 @@ return view.extend({
 				])
 			]);
 
+
+			var sms = E('div', { 'id': 'p2modem-sms', 'style': 'display:none' }, [
+				E('p', { 'class': 'cbi-value-description' }, [
+					_('Los mensajes se consultan solo al pulsar Actualizar SMS. No se modifican ni se borran desde esta pantalla.')
+				]),
+				E('p', {}, [
+					E('button', {
+						'class': 'btn cbi-button',
+						'click': ui.createHandlerFn(this, 'refreshSms')
+					}, [ _('Actualizar SMS') ])
+				]),
+				E('div', { 'id': 'p2modem-sms-output' }, [
+					_('Pulsa Actualizar SMS para consultar los mensajes almacenados en la SIM.')
+				])
+			]);
+
 			var panels = {
 				stats: stats,
 				config: config,
-				raw: raw
+				raw: raw,
+				sms: sms
 			};
 
 			function selectTab(name) {
@@ -223,10 +332,12 @@ return view.extend({
 				' ',
 				E('button', { 'id': 'p2modem-tab-config', 'class': 'btn cbi-button', 'click': function() { selectTab('config'); } }, [ _('Configuracion') ]),
 				' ',
-				E('button', { 'id': 'p2modem-tab-raw', 'class': 'btn cbi-button', 'click': function() { selectTab('raw'); } }, [ _('Raw status') ])
+				E('button', { 'id': 'p2modem-tab-raw', 'class': 'btn cbi-button', 'click': function() { selectTab('raw'); } }, [ _('Raw status') ]),
+				' ',
+				E('button', { 'id': 'p2modem-tab-sms', 'class': 'btn cbi-button', 'click': function() { selectTab('sms'); } }, [ _('SMS') ])
 			]);
 
-			return E([], [ tabs, stats, config, raw ]);
+			return E([], [ tabs, stats, config, raw, sms ]);
 		}, this));
 	}
 });
