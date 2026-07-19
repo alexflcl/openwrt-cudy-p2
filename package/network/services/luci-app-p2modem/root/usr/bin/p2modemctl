@@ -219,6 +219,45 @@ sms_list_impl() {
 	printf '%s\n' "$output"
 }
 
+
+sms_count_impl() {
+	local out count
+	load_cfg
+	wait_for_hardware || return 1
+	# Store incoming messages in SIM memory and request a standard new-message indication.
+	at_ok 'AT+CNMI=2,1,0,0,0' 2 >/dev/null 2>&1 || true
+	out="$(at_capture 'AT+CPMS?' 2)"
+	count="$(printf '%s\n' "$out" | sed -n 's/.*+CPMS: *"[^"]*",\([0-9]*\),.*/\1/p' | head -n 1)"
+	[ -n "$count" ] && printf '%s\n' "$count"
+}
+
+sim_number_impl() {
+	local out number
+	load_cfg
+	wait_for_hardware || return 1
+	out="$(at_capture 'AT+CNUM' 3)"
+	number="$(printf '%s\n' "$out" | sed -n 's/.*+CNUM: *"[^"]*","\([^"]*\)".*/\1/p' | head -n 1)"
+	[ -n "$number" ] && printf '%s\n' "$number"
+}
+
+sms_cache_impl() {
+	[ -r /tmp/p2modem-sms-cache ] && cat /tmp/p2modem-sms-cache
+}
+
+sms_delete_impl() {
+	local index
+	index="$1"
+	case "$index" in ''|*[!0-9]*) log "Indice SMS no valido"; return 1 ;; esac
+	load_cfg
+	wait_for_hardware || return 1
+	at_ok "AT+CMGD=$index" 3 >/tmp/p2modem-sms-delete.log 2>&1 || {
+		log "No se pudo borrar el SMS $index"
+		return 1
+	}
+	rm -f /tmp/p2modem-sms-cache
+	log "SMS $index borrado"
+}
+
 apply_mode_impl() {
 	local mode="$1" section
 	load_cfg
@@ -240,7 +279,7 @@ temp() { [ -r "$1" ] && awk '{printf "%.1f C", $1 / 1000}' "$1" || printf '%s' '
 
 status_impl() {
 	load_cfg
-	echo "[CONFIG]"; echo "enabled=$ENABLED"; echo "data_if=$DATA_IF"; echo "at_port=$AT_PORT"; echo "wwan=$WWAN_IFACE"; echo "apn=${APN:--}"; echo "wan_mode=$WAN_MODE"; echo "radio=$RAT_PREF"; echo "pcie_initialized=$PCIE_INITIALIZED"
+	echo "[CONFIG]"; echo "enabled=$ENABLED"; echo "data_if=$DATA_IF"; echo "at_port=$AT_PORT"; echo "wwan=$WWAN_IFACE"; echo "apn=${APN:--}"; echo "wan_mode=$WAN_MODE"; echo "radio=$RAT_PREF"; echo "pcie_initialized=$PCIE_INITIALIZED"; echo "sim_number=$(cat /tmp/p2modem-sim-number 2>/dev/null || printf '%s' '-')"
 	echo "[HARDWARE]"; [ -d "/sys/class/net/$DATA_IF" ] && echo "pcie_data=ready" || echo "pcie_data=missing"; [ -c "$AT_PORT" ] && echo "at_port=ready" || echo "at_port=missing"
 	echo "[WWAN]"; ifstatus "$WWAN_IFACE" 2>/dev/null || true
 	echo "[ROUTE]"; ip route get 1.1.1.1 2>/dev/null || true
@@ -263,5 +302,9 @@ case "${1:-status}" in
 	status) with_lock status_impl ;;
 	details) with_lock details_impl ;;
 	sms-list) with_lock sms_list_impl ;;
-	*) echo "Uso: $0 {start|connect|bootstrap|disconnect|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>|status|details|sms-list}"; exit 1 ;;
+	sms-count) with_lock sms_count_impl ;;
+	sms-cache) sms_cache_impl ;;
+	sms-delete) with_lock sms_delete_impl "${2:-}" ;;
+	sim-number) with_lock sim_number_impl ;;
+	*) echo "Uso: $0 {start|connect|bootstrap|disconnect|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>|status|details|sms-list|sms-count|sms-cache|sms-delete <index>|sim-number}"; exit 1 ;;
 esac
