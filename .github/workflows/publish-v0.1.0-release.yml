@@ -40,4 +40,10 @@ jobs:
               --title 'Cudy P2 v1 PCIe 5G firmware v0.1.0' \
               --notes-file docs/RELEASE-v0.1.0.md
           fi
-          gh release upload "$tag" release-assets/* --clobber
+          gh release upload "$tag" \
+            release-assets/*cudy_p2-v1-squashfs-sysupgrade.bin \
+            release-assets/*cudy_p2-v1-initramfs-kernel.bin \
+            release-assets/*cudy_p2-v1.manifest \
+            release-assets/sha256sums \
+            release-assets/cudy-p2-used.config \
+            --clobber
