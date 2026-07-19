@@ -1,0 +1,43 @@
+name: Publish Cudy P2 v0.1.0 release
+
+on:
+  push:
+    branches:
+      - rebuild/p2-firmware-clean
+    paths:
+      - '.github/workflows/publish-v0.1.0-release.yml'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download verified firmware artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: '8439932232'
+        run: |
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" \
+            > firmware.zip
+          unzip -q firmware.zip -d release-assets
+          find release-assets -type f -maxdepth 2 -print
+
+      - name: Create release and upload firmware
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='v0.1.0-p2modem'
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --target "$GITHUB_SHA" \
+              --title 'Cudy P2 v1 PCIe 5G firmware v0.1.0' \
+              --notes-file docs/RELEASE-v0.1.0.md
+          fi
+          gh release upload "$tag" release-assets/* --clobber
