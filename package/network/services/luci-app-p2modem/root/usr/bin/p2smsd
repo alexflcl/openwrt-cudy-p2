@@ -1,0 +1,29 @@
+#!/bin/sh
+# Cache SMS in RAM. Only a tiny CPMS counter query runs every 30 seconds;
+# the full inbox is read only when that counter changes.
+CACHE=/tmp/p2modem-sms-cache
+COUNT_FILE=/tmp/p2modem-sms-count
+NUMBER_FILE=/tmp/p2modem-sim-number
+INTERVAL=30
+
+sync_inbox() {
+	/usr/bin/p2modemctl sms-list >"$CACHE.new" 2>/dev/null || return
+	mv "$CACHE.new" "$CACHE"
+	logger -t p2smsd "SMS inbox updated"
+}
+
+while true; do
+	if [ ! -s "$NUMBER_FILE" ]; then
+		/usr/bin/p2modemctl sim-number >"$NUMBER_FILE.new" 2>/dev/null && mv "$NUMBER_FILE.new" "$NUMBER_FILE"
+	fi
+
+	count="$(/usr/bin/p2modemctl sms-count 2>/dev/null)"
+	if [ -n "$count" ]; then
+		previous="$(cat "$COUNT_FILE" 2>/dev/null || true)"
+		if [ "$count" != "$previous" ]; then
+			sync_inbox
+			printf '%s\n' "$count" >"$COUNT_FILE"
+		fi
+	fi
+	sleep "$INTERVAL"
+done
