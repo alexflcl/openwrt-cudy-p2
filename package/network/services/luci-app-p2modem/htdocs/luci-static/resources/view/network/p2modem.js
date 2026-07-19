@@ -117,6 +117,26 @@ return view.extend({
 		return messages;
 	},
 
+
+	deleteSms: function(message) {
+		ui.showModal(_('Borrar SMS'), [
+			E('p', {}, [ _('Se borrara el SMS %s de %s. Esta accion no se puede deshacer.').format(message.index, message.sender || _('Unknown')) ]),
+			E('div', { 'class': 'right' }, [
+				E('button', { 'class': 'btn', 'click': ui.hideModal }, [ _('Cancel') ]),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button-negative',
+					'click': L.bind(function() {
+						ui.hideModal();
+						return fs.exec_direct('/usr/bin/p2modemctl', [ 'sms-delete', message.index ], 'text').then(L.bind(function() {
+							this.refreshSms();
+						}, this));
+					}, this)
+				}, [ _('Borrar') ])
+			])
+		]);
+	},
+
 	showSms: function(message) {
 		ui.showModal(_('SMS de %s').format(message.sender || _('Unknown')), [
 			E('dl', { 'class': 'cbi-value-field' }, [
@@ -137,12 +157,12 @@ return view.extend({
 		if (output)
 			output.textContent = _('Leyendo SMS de la SIM...');
 
-		return fs.exec_direct('/usr/bin/p2modemctl', [ 'sms-list' ], 'text').then(L.bind(function(res) {
+		return fs.exec_direct('/usr/bin/p2modemctl', [ 'sms-cache' ], 'text').then(L.bind(function(res) {
 			var messages = this.parseSms(res || '');
 			var rows;
 
 			if (!messages.length) {
-				output.textContent = _('No hay SMS almacenados en la SIM.');
+				output.textContent = _('Bandeja vacia o sincronizandose. El servicio comprueba la SIM cada 30 segundos.');
 				return;
 			}
 
@@ -157,7 +177,12 @@ return view.extend({
 						E('button', {
 							'class': 'btn cbi-button',
 							'click': L.bind(this.showSms, this, message)
-						}, [ _('Leer') ])
+						}, [ _('Leer') ]),
+						' ',
+						E('button', {
+							'class': 'btn cbi-button-negative',
+							'click': L.bind(this.deleteSms, this, message)
+						}, [ _('Borrar') ])
 					])
 				]);
 			}, this));
@@ -253,7 +278,8 @@ return view.extend({
 					E('dt', {}, [ _('WWAN') ]), E('dd', {}, [ wwanUp ]),
 					E('dt', {}, [ _('Operador') ]), E('dd', { 'id': 'p2modem-stat-operator' }, [ '-' ]),
 					E('dt', {}, [ _('Tecnologia') ]), E('dd', { 'id': 'p2modem-stat-technology' }, [ '-' ]),
-					E('dt', {}, [ _('IP WWAN') ]), E('dd', { 'id': 'p2modem-stat-ip' }, [ '-' ])
+					E('dt', {}, [ _('IP WWAN') ]), E('dd', { 'id': 'p2modem-stat-ip' }, [ '-' ]),
+					E('dt', {}, [ _('Numero SIM') ]), E('dd', {}, [ statusValue(status, 'sim_number') ])
 				]),
 				E('h3', {}, [ _('Temperaturas') ]),
 				E('dl', { 'class': 'cbi-value-field' }, [
@@ -300,13 +326,13 @@ return view.extend({
 
 			var sms = E('div', { 'id': 'p2modem-sms', 'style': 'display:none' }, [
 				E('p', { 'class': 'cbi-value-description' }, [
-					_('Los mensajes se consultan solo al pulsar Actualizar SMS. No se modifican ni se borran desde esta pantalla.')
+					_('La bandeja se sincroniza en RAM cada 30 segundos. La SIM solo se lee completa cuando cambia el numero de mensajes.')
 				]),
 				E('p', {}, [
 					E('button', {
 						'class': 'btn cbi-button',
 						'click': ui.createHandlerFn(this, 'refreshSms')
-					}, [ _('Actualizar SMS') ])
+					}, [ _('Actualizar bandeja') ])
 				]),
 				E('div', { 'id': 'p2modem-sms-output' }, [
 					_('Pulsa Actualizar SMS para consultar los mensajes almacenados en la SIM.')
@@ -320,6 +346,8 @@ return view.extend({
 				sms: sms
 			};
 
+			var smsTimer = null;
+
 			function selectTab(name) {
 				Object.keys(panels).forEach(function(key) {
 					panels[key].style.display = key === name ? '' : 'none';
@@ -327,6 +355,14 @@ return view.extend({
 					if (button)
 						button.classList.toggle('cbi-button-positive', key === name);
 				});
+				if (smsTimer) {
+					window.clearInterval(smsTimer);
+					smsTimer = null;
+				}
+				if (name === 'sms') {
+					this.refreshSms();
+					smsTimer = window.setInterval(L.bind(this.refreshSms, this), 10000);
+				}
 			}
 
 			var tabs = E('div', { 'class': 'cbi-page-actions', 'style': 'margin-bottom:1rem' }, [
