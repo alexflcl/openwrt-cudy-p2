@@ -163,15 +163,17 @@ return view.extend({
 			}, this));
 
 			dom.content(output, E('table', { 'class': 'table cbi-section-table' }, [
-				E('tr', { 'class': 'tr table-titles' }, [
-					E('th', { 'class': 'th' }, [ '#' ]),
-					E('th', { 'class': 'th' }, [ _('Estado') ]),
-					E('th', { 'class': 'th' }, [ _('Remitente') ]),
-					E('th', { 'class': 'th' }, [ _('Fecha') ]),
-					E('th', { 'class': 'th' }, [ _('Vista previa') ]),
-					E('th', { 'class': 'th' }, [ '' ])
+				E('thead', {}, [
+					E('tr', { 'class': 'tr table-titles' }, [
+						E('th', { 'class': 'th' }, [ '#' ]),
+						E('th', { 'class': 'th' }, [ _('Estado') ]),
+						E('th', { 'class': 'th' }, [ _('Remitente') ]),
+						E('th', { 'class': 'th' }, [ _('Fecha') ]),
+						E('th', { 'class': 'th' }, [ _('Vista previa') ]),
+						E('th', { 'class': 'th' }, [ '' ])
+					])
 				]),
-				rows
+				E('tbody', {}, rows)
 			]));
 		}, this)).catch(function(err) {
 			if (output)
