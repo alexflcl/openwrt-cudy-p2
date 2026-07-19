@@ -1,108 +1,47 @@
-![OpenWrt logo](include/logo.png)
+# OpenWrt Cudy P2 v1 - PCIe 5G build
 
-OpenWrt Project is a Linux operating system targeting embedded devices. Instead
-of trying to create a single, static firmware, OpenWrt provides a fully
-writable filesystem with package management. This frees you from the
-application selection and configuration provided by the vendor and allows you
-to customize the device through the use of packages to suit any application.
-For developers, OpenWrt is the framework to build an application without having
-to build a complete firmware around it; for users this means the ability for
-full customization, to use the device in ways never envisioned.
+Custom OpenWrt build for **Cudy P2 v1** with the internal Quectel 5G modem operating through PCIe.
 
-Sunshine!
+> [!WARNING]
+> This is an experimental community build for one exact hardware revision: **Cudy P2 v1**. It is not an official Cudy or OpenWrt image. Flashing can make the router inaccessible and may require UART recovery. Do not use it on a different Cudy model or hardware revision.
 
 ## Download
 
-Built firmware images are available for many architectures and come with a
-package selection to be used as WiFi home router. To quickly find a factory
-image usable to migrate from a vendor stock firmware to OpenWrt, try the
-*Firmware Selector*.
+The current firmware is published in this repository's [Releases](../../releases).
 
-* [OpenWrt Firmware Selector](https://firmware-selector.openwrt.org/)
+Until the release asset is published, use the successful GitHub Actions artifact:
 
-If your device is supported, please follow the **Info** link to see install
-instructions or consult the support resources listed below.
+- [Firmware build #29676743756](../../actions/runs/29676743756)
+- Artifact: `cudy-p2-firmware`
+- Build commit: `c1d77b7ce3b9c1203432c5deebb1d092db66a942`
+- Artifact digest: `sha256:06b09d2c80b2dc02f8fca855f9bad942db3cc6ad4631a7de97856b6f29712aea`
 
-## 
+For an already-running OpenWrt P2 installation, use only:
 
-An advanced user may require additional or specific package. (Toolchain, SDK, ...) For everything else than simple firmware download, try the wiki download page:
+`*-cudy_p2-v1-squashfs-sysupgrade.bin`
 
-* [OpenWrt Wiki Download](https://openwrt.org/downloads)
+The `*-initramfs-kernel.bin` image is for RAM boot/recovery workflows, not normal LuCI upgrades.
 
-## Development
+## Features
 
-To build your own firmware you need a GNU/Linux, BSD or macOS system (case
-sensitive filesystem required). Cygwin is unsupported because of the lack of a
-case sensitive file system.
+- PCIe-only internal 5G modem support via `kmod-sprd-pcie`.
+- P2 Modem LuCI page: APN, PDP type, 4G/5G/auto preference and WAN priority.
+- Correct physical network defaults: one `LAN` port and one `WAN` port.
+- LAN DNS defaults: `1.1.1.1` and `8.8.8.8`.
+- SIM startup over PCIe, without the unsafe modem-wide `AT+CFUN=1,1` reset.
+- SMS inbox in LuCI, cached in RAM, automatic low-frequency sync and per-message deletion.
+- SIM phone-number display when the SIM exposes its MSISDN.
+- Reduced normal PCIe debug-log noise while retaining warnings and errors.
 
-### Requirements
+## Installation
 
-You need the following tools to compile OpenWrt, the package names vary between
-distributions. A complete list with distribution specific packages is found in
-the [Build System Setup](https://openwrt.org/docs/guide-developer/build-system/install-buildsystem)
-documentation.
+Read [the installation guide](docs/INSTALL.md) before flashing.
 
-```
-binutils bzip2 diff find flex gawk gcc-6+ getopt grep install libc-dev libz-dev
-make4.1+ perl python3.7+ rsync subversion unzip which
-```
+## Build
 
-### Quickstart
+The GitHub Actions workflow builds the complete image automatically when P2-related sources change. See [release notes](docs/RELEASE-v0.1.0.md) for the exact contents of this build.
 
-1. Run `./scripts/feeds update -a` to obtain all the latest package definitions
-   defined in feeds.conf / feeds.conf.default
+## Credits
 
-2. Run `./scripts/feeds install -a` to install symlinks for all obtained
-   packages into package/feeds/
-
-3. Run `make menuconfig` to select your preferred configuration for the
-   toolchain, target system & firmware packages.
-
-4. Run `make` to build your firmware. This will download all sources, build the
-   cross-compile toolchain and then cross-compile the GNU/Linux kernel & all chosen
-   applications for your target system.
-
-### Related Repositories
-
-The main repository uses multiple sub-repositories to manage packages of
-different categories. All packages are installed via the OpenWrt package
-manager called `opkg`. If you're looking to develop the web interface or port
-packages to OpenWrt, please find the fitting repository below.
-
-* [LuCI Web Interface](https://github.com/openwrt/luci): Modern and modular
-  interface to control the device via a web browser.
-
-* [OpenWrt Packages](https://github.com/openwrt/packages): Community repository
-  of ported packages.
-
-* [OpenWrt Routing](https://github.com/openwrt/routing): Packages specifically
-  focused on (mesh) routing.
-
-* [OpenWrt Video](https://github.com/openwrt/video): Packages specifically
-  focused on display servers and clients (Xorg and Wayland).
-
-## Support Information
-
-For a list of supported devices see the [OpenWrt Hardware Database](https://openwrt.org/supported_devices)
-
-### Documentation
-
-* [Quick Start Guide](https://openwrt.org/docs/guide-quick-start/start)
-* [User Guide](https://openwrt.org/docs/guide-user/start)
-* [Developer Documentation](https://openwrt.org/docs/guide-developer/start)
-* [Technical Reference](https://openwrt.org/docs/techref/start)
-
-### Support Community
-
-* [Forum](https://forum.openwrt.org): For usage, projects, discussions and hardware advise.
-* [Support Chat](https://webchat.oftc.net/#openwrt): Channel `#openwrt` on **oftc.net**.
-
-### Developer Community
-
-* [Bug Reports](https://bugs.openwrt.org): Report bugs in OpenWrt
-* [Dev Mailing List](https://lists.openwrt.org/mailman/listinfo/openwrt-devel): Send patches
-* [Dev Chat](https://webchat.oftc.net/#openwrt-devel): Channel `#openwrt-devel` on **oftc.net**.
-
-## License
-
-OpenWrt is licensed under GPL-2.0
+- PCIe modem support: [zekica/openwrt-cudy-p2](https://github.com/zekica/openwrt-cudy-p2) and [zekica/openwrt-sprd-pcie](https://github.com/zekica/openwrt-sprd-pcie).
+- Cudy P2 upstream support work: [openwrt/openwrt#23721](https://github.com/openwrt/openwrt/pull/23721).
