@@ -199,6 +199,26 @@ disconnect_impl() {
 	log "WWAN desconectada"
 }
 
+
+sms_list_impl() {
+	local mode_out previous_mode output
+	load_cfg
+	wait_for_hardware || return 1
+
+	mode_out="$(at_capture 'AT+CMGF?' 2)"
+	previous_mode="$(printf '%s\n' "$mode_out" | sed -n 's/.*+CMGF: *\([01]\).*/\1/p' | head -n 1)"
+
+	# Text mode lets the modem provide decoded sender/date/body fields. Restore
+	# the previous mode afterwards so this read-only operation has no side effects.
+	at_ok 'AT+CMGF=1' 2 >/tmp/p2modem-sms.log 2>&1 || {
+		log "No se pudo activar el modo de lectura SMS"
+		return 1
+	}
+	output="$(at_capture 'AT+CMGL="ALL"' 8)"
+	[ -n "$previous_mode" ] && at_ok "AT+CMGF=$previous_mode" 2 >>/tmp/p2modem-sms.log 2>&1 || true
+	printf '%s\n' "$output"
+}
+
 apply_mode_impl() {
 	local mode="$1" section
 	load_cfg
@@ -242,5 +262,6 @@ case "${1:-status}" in
 	apply-mode) with_lock apply_mode_impl "${2:-}" ;;
 	status) with_lock status_impl ;;
 	details) with_lock details_impl ;;
-	*) echo "Uso: $0 {start|connect|bootstrap|disconnect|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>|status|details}"; exit 1 ;;
+	sms-list) with_lock sms_list_impl ;;
+	*) echo "Uso: $0 {start|connect|bootstrap|disconnect|apply-mode <sim-primary|wan-primary|wan-as-lan|4g|5g|auto>|status|details|sms-list}"; exit 1 ;;
 esac
